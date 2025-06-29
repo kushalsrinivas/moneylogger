@@ -1,75 +1,167 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { StyleSheet, View } from "react-native";
+import { G, Text as SvgText } from "react-native-svg";
+import { PieChart } from "react-native-svg-charts";
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
+import { useStats, useTransactions } from "@/db/hooks";
 
-export default function HomeScreen() {
+type PieSlice = {
+  key: string;
+  value: number;
+  svg: { fill: string };
+  arc?: { outerRadius?: string; padAngle?: number };
+  label?: string;
+};
+
+export default function DashboardScreen() {
+  const { transactions } = useTransactions();
+  const { stats } = useStats();
+
+  // Calculate current month totals
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  let income = 0;
+  let expenses = 0;
+  const categoryTotals: Record<string, number> = {};
+
+  transactions.forEach((tx) => {
+    const d = new Date(tx.date);
+    if (d.getMonth() !== currentMonth || d.getFullYear() !== currentYear)
+      return;
+
+    if (tx.type === "income") {
+      income += tx.amount;
+    } else {
+      expenses += tx.amount;
+      categoryTotals[tx.category] =
+        (categoryTotals[tx.category] || 0) + tx.amount;
+    }
+  });
+
+  const net = income - expenses;
+
+  // Build pie slices (only for expenses)
+  const colors = [
+    "#4e79a7",
+    "#f28e2b",
+    "#e15759",
+    "#76b7b2",
+    "#59a14f",
+    "#edc949",
+    "#af7aa1",
+  ];
+  const slices: PieSlice[] = Object.entries(categoryTotals).map(
+    ([cat, val], idx) => ({
+      key: cat,
+      value: val,
+      svg: { fill: colors[idx % colors.length] },
+      label: cat,
+    })
+  );
+
+  const Labels = ({ slices }: { slices: readonly any[] }) => {
+    return (
+      <G>
+        {slices.map((slice, index) => {
+          const { pieCentroid, data } = slice;
+          return (
+            <SvgText
+              key={`label-${index}`}
+              x={pieCentroid[0]}
+              y={pieCentroid[1]}
+              fill="white"
+              textAnchor="middle"
+              alignmentBaseline="middle"
+              fontSize={10}
+              stroke="black"
+              strokeWidth={0.2}
+            >
+              {data.key}
+            </SvgText>
+          );
+        })}
+      </G>
+    );
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
+    <ThemedView style={styles.container}>
+      {/* XP & Streak Counters */}
+      <View style={styles.statsRow}>
+        <ThemedText type="title">XP: {stats?.xp ?? 0}</ThemedText>
+        <ThemedText type="title">🔥 Streak: {stats?.streak ?? 0}</ThemedText>
+      </View>
+
+      {/* Numeric Overview */}
+      <View style={styles.overviewRow}>
+        <StatCard label="Income" value={income} color="#4caf50" />
+        <StatCard label="Expenses" value={expenses} color="#f44336" />
+        <StatCard
+          label="Net"
+          value={net}
+          color={net >= 0 ? "#4caf50" : "#f44336"}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      </View>
+
+      {/* Pie Chart */}
+      {slices.length > 0 ? (
+        <View style={styles.chartContainer}>
+          <PieChart style={{ height: 180 }} data={slices} outerRadius={"90%"}>
+            <Labels slices={slices} />
+          </PieChart>
+        </View>
+      ) : (
+        <ThemedText>No expenses recorded this month.</ThemedText>
+      )}
+    </ThemedView>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <View style={[styles.statCard, { borderColor: color }]}>
+      <ThemedText type="subtitle">{label}</ThemedText>
+      <ThemedText type="title" style={{ color }}>
+        ₹{value.toFixed(0)}
+      </ThemedText>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    padding: 16,
+    gap: 24,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  overviewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  statCard: {
+    flex: 1,
+    alignItems: "center",
+    padding: 12,
+    borderWidth: 2,
+    borderRadius: 8,
+    marginHorizontal: 4,
+  },
+  statsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  chartContainer: {
+    alignItems: "center",
   },
 });
